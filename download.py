@@ -402,17 +402,21 @@ if __name__ == "__main__":
                         help="client-secret of your Fitbit app")
     parser.add_argument('--start', dest='startDate', default=datetime.datetime.now().strftime("%Y-%m-%d"),
                         help="Date (YYYY-MM-DD) from which to start the backward scraping. Default is today")
-    parser.add_argument('--limit', type=int, dest='limit', default=50,
-                        help="maximum number of days to download. Default is 50")
+    parser.add_argument('--limit', type=int, dest='limit', default=25,
+                        help="maximum number of days to download. Default is 25")
+    parser.add_argument('--online', dest='online', action='store_true')
+    parser.add_argument('--offline', dest='online', action='store_false')
+    parser.set_defaults(online=True)
 
     args = parser.parse_args()
     FB_ID = args.clientId
     FB_SECRET = args.clientSecret
     startdate = datetime.datetime.strptime(args.startDate, "%Y-%m-%d").date()
     limit = args.limit
+    online = args.online
+    print ("Online : " + str(online))
 
     print("Starting : {}, maximum days : {}".format(startdate.strftime("%Y-%m-%d"), limit))
-    CONNECT = True
 
     create_directory_if_not_exist("Sleep")
     create_directory_if_not_exist("Steps")
@@ -421,7 +425,7 @@ if __name__ == "__main__":
     create_directory_if_not_exist("Data")
     create_directory_if_not_exist("Cache")
 
-    if CONNECT:
+    if online:
         server = Oauth2.OAuth2Server(FB_ID, FB_SECRET)
         server.browser_authorize()
 
@@ -430,7 +434,7 @@ if __name__ == "__main__":
 
         auth2_client = fitbit.Fitbit(FB_ID, FB_SECRET, oauth2=True, access_token=ACCESS_TOKEN,
                                      refresh_token=REFRESH_TOKEN)
-        time.sleep(1)
+        time.sleep(1) # Keep cherry webserver log and app log seperated
     else:
         auth2_client = None
 
