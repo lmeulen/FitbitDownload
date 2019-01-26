@@ -133,17 +133,32 @@ def save_detailed_activities(fb_client, db_conn, day):
     day_str = str(day.strftime("%Y-%m-%d"))
 
     for act in ["calories", "steps", "distance", "floors", "elevation", "activityCalories"]:
-        # url = "https://api.fitbit.com/1/user/-/activities/calories/date/2019-01-26/1d/1min.json"
-        url = "https://api.fitbit.com/1/user/-/activities/{activity}/date/{year}-{month}-{day}.json".format(
-            year=day.year,
-            month=day.month,
-            day=day.day,
-            activity=act
-        )
         act_stats = read_from_cache("activities_" + act, day_str)
         if not act_stats:
-            act_stats = fb_client.make_request(url)  # dict
+            act_stats = fb_client.intraday_time_series('activities/' + act, base_date=day_str, detail_level='1min')
             save_to_cache("activities_" + act, day_str, act_stats, )
+
+
+def save_body(fb_client, db_conn, day):
+    """
+    Download and save body information from Fitbit API
+    At this moment, only store to cache
+    :param fb_client: Fitbit Client
+    :param db_conn: DB connection
+    :param day: day to retrieve
+    :return:
+    """
+    day_str = str(day.strftime("%Y-%m-%d"))
+
+    weight_stats = read_from_cache("weight", day_str)
+    if not weight_stats:
+        weight_stats = fb_client.get_bodyweight(day, period='1d')
+        save_to_cache("weight", day_str, weight_stats)
+
+    fat_stats = read_from_cache("bodyfat", day_str)
+    if not fat_stats:
+        fat_stats = fb_client.get_bodyfat(day, period='1d')
+        save_to_cache("bodyfat", day_str, fat_stats)
 
 
 def save_activities(fb_client, db_conn, day):
@@ -444,6 +459,7 @@ if __name__ == "__main__":
         day_to_retrieve = startdate - datetime.timedelta(days=j)
         print("{} : {}".format(j, day_to_retrieve.strftime("%Y-%m-%d")))
         save_detailed_activities(auth2_client, db_connection, day_to_retrieve)
+        save_body(auth2_client, db_connection, day_to_retrieve)
         save_sleep(auth2_client, db_connection, day_to_retrieve)
         save_activities(auth2_client, db_connection, day_to_retrieve)
         save_steps(auth2_client, db_connection, day_to_retrieve)
