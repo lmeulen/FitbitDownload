@@ -6,6 +6,7 @@ import sqlite3
 import os
 import json
 import argparse
+import time
 
 def create_directory_if_not_exist(directory):
     """
@@ -399,15 +400,18 @@ if __name__ == "__main__":
                         help="client-id of your Fitbit app")
     parser.add_argument('--secret', metavar='clientSecret', dest='clientSecret', required=True,
                         help="client-secret of your Fitbit app")
-    # parser.add_argument('--start', dest='startDate', default='2016-01-01',
-    #                     help="Date from which to start the forward scraping. Defaults to 2016-01-01")
-    #parser.add_argument('--limit', type=int, dest='limit', default=400,
-    #                    help="maximum number of days to scrape")
+    parser.add_argument('--start', dest='startDate', default=datetime.datetime.now().strftime("%Y-%m-%d"),
+                        help="Date (YYYY-MM-DD) from which to start the backward scraping. Default is today")
+    parser.add_argument('--limit', type=int, dest='limit', default=50,
+                        help="maximum number of days to download. Default is 50")
 
     args = parser.parse_args()
     FB_ID = args.clientId
     FB_SECRET = args.clientSecret
+    startdate = datetime.datetime.strptime(args.startDate, "%Y-%m-%d").date()
+    limit = args.limit
 
+    print("Starting : {}, maximum days : {}".format(startdate.strftime("%Y-%m-%d"), limit))
     CONNECT = True
 
     create_directory_if_not_exist("Sleep")
@@ -426,13 +430,14 @@ if __name__ == "__main__":
 
         auth2_client = fitbit.Fitbit(FB_ID, FB_SECRET, oauth2=True, access_token=ACCESS_TOKEN,
                                      refresh_token=REFRESH_TOKEN)
+        time.sleep(1)
     else:
         auth2_client = None
 
     db_connection = sqlite3.connect('data/fitbit.db')
 
-    for j in range(28, 50):
-        day_to_retrieve = datetime.datetime.now() - datetime.timedelta(days=j)
+    for j in range(0, limit):
+        day_to_retrieve = startdate - datetime.timedelta(days=j)
         print("{} : {}".format(j, day_to_retrieve.strftime("%Y-%m-%d")))
         save_detailed_activities(auth2_client, db_connection, day_to_retrieve)
         save_sleep(auth2_client, db_connection, day_to_retrieve)
