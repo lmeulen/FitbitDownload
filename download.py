@@ -119,6 +119,32 @@ def save_df(dataframe, logdate, filename, tablename, cnx, dup_cols, save_csv=Tru
         dataframe_new.to_sql(name=tablename, con=cnx, if_exists='append', index=False)
 
 
+def save_detailed_activities(fb_client, db_conn, day):
+    """
+    Download and save detailed activity information from Fitbit API
+    At this moment, only store to cache
+    Stores sleep day overview and summary
+    :param fb_client: Fitbit Client
+    :param db_conn: DB connection
+    :param day: day to retrieve
+    :return:
+    """
+    day_str = str(day.strftime("%Y-%m-%d"))
+
+    for act in ["calories", "steps", "distance", "floors", "elevation", "activityCalories"]:
+        # url = "https://api.fitbit.com/1/user/-/activities/calories/date/2019-01-26/1d/1min.json"
+        url = "https://api.fitbit.com/1/user/-/activities/{activity}/date/{year}-{month}-{day}.json".format(
+            year=day.year,
+            month=day.month,
+            day=day.day,
+            activity=act
+        )
+        act_stats = read_from_cache("activities_" + act, day_str)
+        if not act_stats:
+            act_stats = fb_client.make_request(url)  # dict
+            save_to_cache("activities_" + act, day_str, act_stats, )
+
+
 def save_activities(fb_client, db_conn, day):
     """
     Download and save activity information from Fitbit API
@@ -236,7 +262,7 @@ def save_sleep(fb_client, db_conn, day):
             'Restless Count': rec['restlessCount'],
             'Restless Duration': rec['restlessDuration']
         }, index=[0])
-        if log_stats:
+        if i > 0:
             log_stats.append(log_stats2)
         else:
             log_stats = log_stats2.copy()
@@ -244,16 +270,29 @@ def save_sleep(fb_client, db_conn, day):
 
     save_df(log_stats, day_str, 'Sleep/sleep_statistics_', 'Sleep', db_conn, ['Date', 'Log Count'])
 
-    summary = pd.DataFrame({
-        'Date': sleep_stats['sleep'][0]['dateOfSleep'],
-        'Minutes Asleep': sleep_stats['summary']['totalMinutesAsleep'],
-        'Sleep Records': sleep_stats['summary']['totalSleepRecords'],
-        'Time in Bed': sleep_stats['summary']['totalTimeInBed'],
-        'Stage Deep': sleep_stats['summary']['stages']['deep'],
-        'Stage Light': sleep_stats['summary']['stages']['light'],
-        'Stage REM': sleep_stats['summary']['stages']['rem'],
-        'Stage Wake': sleep_stats['summary']['stages']['wake']
-    }, index=[0])
+    # check if stages are present
+    if sleep_stats.get('summary').get('stages'):
+        summary = pd.DataFrame({
+            'Date': sleep_stats['sleep'][0]['dateOfSleep'],
+            'Minutes Asleep': sleep_stats['summary']['totalMinutesAsleep'],
+            'Sleep Records': sleep_stats['summary']['totalSleepRecords'],
+            'Time in Bed': sleep_stats['summary']['totalTimeInBed'],
+            'Stage Deep': sleep_stats['summary']['stages']['deep'],
+            'Stage Light': sleep_stats['summary']['stages']['light'],
+            'Stage REM': sleep_stats['summary']['stages']['rem'],
+            'Stage Wake': sleep_stats['summary']['stages']['wake']
+        }, index=[0])
+    else:
+        summary = pd.DataFrame({
+            'Date': sleep_stats['sleep'][0]['dateOfSleep'],
+            'Minutes Asleep': sleep_stats['summary']['totalMinutesAsleep'],
+            'Sleep Records': sleep_stats['summary']['totalSleepRecords'],
+            'Time in Bed': sleep_stats['summary']['totalTimeInBed'],
+            'Stage Deep': -1,
+            'Stage Light': -1,
+            'Stage REM': -1,
+            'Stage Wake': -1
+        }, index=[0])
     save_df(summary, day_str, 'Sleep/sleep_summary_', 'Sleep_Summary', db_conn, ['Date'])
 
     time_list = []
@@ -360,8 +399,6 @@ if __name__ == "__main__":
                         help="client-id of your Fitbit app")
     parser.add_argument('--secret', metavar='clientSecret', dest='clientSecret', required=True,
                         help="client-secret of your Fitbit app")
-    # parser.add_argument('--out', metavar='outDir', dest='outDir', required=True,
-    #                     help="output data destination folder")
     # parser.add_argument('--start', dest='startDate', default='2016-01-01',
     #                     help="Date from which to start the forward scraping. Defaults to 2016-01-01")
     #parser.add_argument('--limit', type=int, dest='limit', default=400,
@@ -394,13 +431,11 @@ if __name__ == "__main__":
 
     db_connection = sqlite3.connect('data/fitbit.db')
 
-    for j in range(0, 6):
-        print(j)
+    for j in range(28, 50):
         day_to_retrieve = datetime.datetime.now() - datetime.timedelta(days=j)
-        print(day_to_retrieve.strftime("%Y-%m-%d"))
-
+        print("{} : {}".format(j, day_to_retrieve.strftime("%Y-%m-%d")))
+        save_detailed_activities(auth2_client, db_connection, day_to_retrieve)
         save_sleep(auth2_client, db_connection, day_to_retrieve)
-        exit()
         save_activities(auth2_client, db_connection, day_to_retrieve)
         save_steps(auth2_client, db_connection, day_to_retrieve)
         save_heart(auth2_client, db_connection, day_to_retrieve)
