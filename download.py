@@ -19,6 +19,28 @@ def create_directory_if_not_exist(directory):
         os.makedirs(directory)
 
 
+def get_dict_element(dict, key1, key2=None, key3=None):
+    """
+    Return an item from a dictionary, maximum three levels deep. Keys
+    can be integers or strings.
+    Can also handle lists
+    :param dict: Dictionary
+    :param key1: First level key
+    :param key2: Second level key
+    :param key3: Third level key
+    :return:
+    """
+    try :
+        if key3:
+            return dict[key1][key2][key3]
+        elif key2:
+            return dict[key1][key2]
+        else:
+            return dict[key1]
+    except:
+        return None
+
+
 def read_from_cache(name, date):
     """
     Read dictionary from cache
@@ -114,11 +136,12 @@ def save_df(dataframe, logdate, filename, tablename, cnx, dup_cols, save_csv=Tru
     :param save_sql: Specifies if data should be stored in CSV (default FALSE)
     :return:
     """
-    if save_csv:
-        dataframe.to_csv(filename + logdate.replace('-', '') + '.csv', header=True, index=False)
-    if save_sql:
-        dataframe_new = clean_df_from_db_duplicates(dataframe, tablename, cnx, dup_cols=dup_cols)
-        dataframe_new.to_sql(name=tablename, con=cnx, if_exists='append', index=False)
+    if not dataframe is None:
+        if save_csv:
+            dataframe.to_csv(filename + logdate.replace('-', '') + '.csv', header=True, index=False)
+        if save_sql:
+            dataframe_new = clean_df_from_db_duplicates(dataframe, tablename, cnx, dup_cols=dup_cols)
+            dataframe_new.to_sql(name=tablename, con=cnx, if_exists='append', index=False)
 
 
 def save_detailed_activities(fb_client, db_conn, day):
@@ -150,6 +173,17 @@ def save_detailed_activities(fb_client, db_conn, day):
     floorsdf = pd.DataFrame({'Date': date_list, 'Time': time_list, 'Floors': val_list})
     save_df(floorsdf, day_str, 'Floors/floors_intraday_', 'Floors_1m', db_conn, ['Date', 'Time'])
 
+    elev_stats = read_from_cache("activities_elevation", day_str)
+    date_list = []
+    time_list = []
+    val_list = []
+    for i in elev_stats['activities-elevation-intraday']['dataset']:
+        date_list.append(day_str)
+        val_list.append(i['value'])
+        time_list.append(i['time'])
+    elevsdf = pd.DataFrame({'Date': date_list, 'Time': time_list, 'Elevation': val_list})
+    save_df(elevsdf, day_str, 'Elevation/elevation_intraday_', 'Elevation_1m', db_conn, ['Date', 'Time'])
+
     dist_stats = read_from_cache("activities_distance", day_str)
     date_list = []
     time_list = []
@@ -173,6 +207,16 @@ def save_detailed_activities(fb_client, db_conn, day):
     save_df(caldf, day_str, 'Calories/calories_intraday_', 'Calories_1m', db_conn, ['Date', 'Time'])
 
 
+def check_date(dataframe, key, target_date):
+    try:
+        leftside = str(dataframe[key].iloc[0])
+        if leftside == target_date:
+            return True
+        else:
+            return False
+    except:
+        return False
+
 def save_body(fb_client, db_conn, day):
     """
     Download and save body information from Fitbit API
@@ -189,11 +233,14 @@ def save_body(fb_client, db_conn, day):
         weight_stats = fb_client.get_bodyweight(day, period='1d')
         save_to_cache("weight", day_str, weight_stats)
 
-    fat_stats = read_from_cache("bodyfat", day_str)
-    if not fat_stats:
-        fat_stats = fb_client.get_bodyfat(day, period='1d')
-        save_to_cache("bodyfat", day_str, fat_stats)
-
+    body_df = pd.DataFrame({
+        'Date': get_dict_element(weight_stats, 'weight', 0, 'date'),
+        'Weight': get_dict_element(weight_stats, 'weight', 0, 'weight'),
+        'Bodyfat': get_dict_element(weight_stats, 'weight', 0, 'fat'),
+        'BMI': get_dict_element(weight_stats, 'weight', 0, 'bmi')
+    }, index=[0])
+    if check_date(body_df, 'Date', day_str):
+        save_df(body_df, day_str, 'Body/body__', 'Body', db_conn, ['Date'])
 
 def save_activities(fb_client, db_conn, day):
     """
@@ -216,52 +263,28 @@ def save_activities(fb_client, db_conn, day):
         act_stats = fb_client.make_request(url)  # dict
         save_to_cache("activities", day_str, act_stats)
 
-    if act_stats.get('goals'):
-        log_activities = pd.DataFrame({
-            'Date': day_str,
-            'Goal Active Minutes': act_stats['goals']['activeMinutes'],
-            'Goal Calories Out': act_stats['goals']['caloriesOut'],
-            'Goal Distance': act_stats['goals']['distance'],
-            'Goal Floors': act_stats['goals']['floors'],
-            'Goal Steps': act_stats['goals']['steps'],
-            'Active Score': act_stats['summary']['activeScore'],
-            'Steps': act_stats['summary']['steps'],
-            'Distance': act_stats['summary']['distances'][0]['distance'],
-            'Elevation': act_stats['summary']['elevation'],
-            'Floors': act_stats['summary']['floors'],
-            'Resting Heart Rate': act_stats['summary']['restingHeartRate'],
-            'Activity Calories': act_stats['summary']['activityCalories'],
-            'Calories BMR': act_stats['summary']['caloriesBMR'],
-            'Marginal Calories': act_stats['summary']['marginalCalories'],
-            'Calories Out': act_stats['summary']['caloriesOut'],
-            'Sedentary Minutes': act_stats['summary']['sedentaryMinutes'],
-            'Lightly Active Minutes': act_stats['summary']['lightlyActiveMinutes'],
-            'Fairly Active Minutes': act_stats['summary']['fairlyActiveMinutes'],
-            'Very Active Minutes': act_stats['summary']['veryActiveMinutes']
-        }, index=[0])
-    else:
-        log_activities = pd.DataFrame({
-            'Date': day_str,
-            'Goal Active Minutes': None,
-            'Goal Calories Out': None,
-            'Goal Distance': None,
-            'Goal Floors': None,
-            'Goal Steps': None,
-            'Active Score': act_stats['summary']['activeScore'],
-            'Steps': act_stats['summary']['steps'],
-            'Distance': act_stats['summary']['distances'][0]['distance'],
-            'Elevation': act_stats['summary']['elevation'],
-            'Floors': act_stats['summary']['floors'],
-            'Resting Heart Rate': act_stats['summary']['restingHeartRate'],
-            'Activity Calories': act_stats['summary']['activityCalories'],
-            'Calories BMR': act_stats['summary']['caloriesBMR'],
-            'Marginal Calories': act_stats['summary']['marginalCalories'],
-            'Calories Out': act_stats['summary']['caloriesOut'],
-            'Sedentary Minutes': act_stats['summary']['sedentaryMinutes'],
-            'Lightly Active Minutes': act_stats['summary']['lightlyActiveMinutes'],
-            'Fairly Active Minutes': act_stats['summary']['fairlyActiveMinutes'],
-            'Very Active Minutes': act_stats['summary']['veryActiveMinutes']
-        }, index=[0])
+    log_activities = pd.DataFrame({
+        'Date': day_str,
+        'Goal Active Minutes': get_dict_element(act_stats, 'goals', 'activeMinutes'),
+        'Goal Calories Out': get_dict_element(act_stats, 'goals', 'caloriesOut'),
+        'Goal Distance': get_dict_element(act_stats, 'goals', 'distance'),
+        'Goal Floors': get_dict_element(act_stats, 'goals', 'floors'),
+        'Goal Steps': get_dict_element(act_stats, 'goals', 'steps'),
+        'Active Score': act_stats['summary']['activeScore'],
+        'Steps': act_stats['summary']['steps'],
+        'Distance': act_stats['summary']['distances'][0]['distance'],
+        'Elevation': act_stats['summary']['elevation'],
+        'Floors': act_stats['summary']['floors'],
+        'Resting Heart Rate': act_stats['summary']['restingHeartRate'],
+        'Activity Calories': act_stats['summary']['activityCalories'],
+        'Calories BMR': act_stats['summary']['caloriesBMR'],
+        'Marginal Calories': act_stats['summary']['marginalCalories'],
+        'Calories Out': act_stats['summary']['caloriesOut'],
+        'Sedentary Minutes': act_stats['summary']['sedentaryMinutes'],
+        'Lightly Active Minutes': act_stats['summary']['lightlyActiveMinutes'],
+        'Fairly Active Minutes': act_stats['summary']['fairlyActiveMinutes'],
+        'Very Active Minutes': act_stats['summary']['veryActiveMinutes']
+    }, index=[0])
 
     save_df(log_activities, day_str, 'Activities/activities_summary_', 'Activities_Summary', db_conn, ['Date'])
 
@@ -342,32 +365,19 @@ def save_sleep(fb_client, db_conn, day):
         else:
             log_stats = log_stats2.copy()
         i = i + 1
-
     save_df(log_stats, day_str, 'Sleep/sleep_statistics_', 'Sleep', db_conn, ['Date', 'Log Count'])
 
     # check if stages are present
-    if sleep_stats.get('summary').get('stages'):
-        summary = pd.DataFrame({
-            'Date': sleep_stats['sleep'][0]['dateOfSleep'],
-            'Minutes Asleep': sleep_stats['summary']['totalMinutesAsleep'],
-            'Sleep Records': sleep_stats['summary']['totalSleepRecords'],
-            'Time in Bed': sleep_stats['summary']['totalTimeInBed'],
-            'Stage Deep': sleep_stats['summary']['stages']['deep'],
-            'Stage Light': sleep_stats['summary']['stages']['light'],
-            'Stage REM': sleep_stats['summary']['stages']['rem'],
-            'Stage Wake': sleep_stats['summary']['stages']['wake']
-        }, index=[0])
-    else:
-        summary = pd.DataFrame({
-            'Date': sleep_stats['sleep'][0]['dateOfSleep'],
-            'Minutes Asleep': sleep_stats['summary']['totalMinutesAsleep'],
-            'Sleep Records': sleep_stats['summary']['totalSleepRecords'],
-            'Time in Bed': sleep_stats['summary']['totalTimeInBed'],
-            'Stage Deep': -1,
-            'Stage Light': -1,
-            'Stage REM': -1,
-            'Stage Wake': -1
-        }, index=[0])
+    summary = pd.DataFrame({
+        'Date': get_dict_element(sleep_stats, 'sleep', 0, 'dateOfSleep'),
+        'Minutes Asleep': get_dict_element(sleep_stats, 'summary', 'totalMinutesAsleep'),
+        'Sleep Records': get_dict_element(sleep_stats, 'summary', 'totalSleepRecords'),
+        'Time in Bed': get_dict_element(sleep_stats, 'summary', 'totalTimeInBed'),
+        'Stage Deep': get_dict_element(sleep_stats, 'summary', 'stages', 'deep'),
+        'Stage Light': get_dict_element(sleep_stats, 'summary', 'stages', 'light'),
+        'Stage REM': get_dict_element(sleep_stats, 'summary', 'stages', 'rem'),
+        'Stage Wake': get_dict_element(sleep_stats, 'summary', 'stages', 'wake')
+    }, index=[0])
     save_df(summary, day_str, 'Sleep/sleep_summary_', 'Sleep_Summary', db_conn, ['Date'])
 
     time_list = []
@@ -438,7 +448,7 @@ def save_heart(fb_client, db_conn, day):
 
     summary = pd.DataFrame({
         'Date': hr_stats['activities-heart'][0]['dateTime'],
-        'Resting Heart Rate': hr_stats['activities-heart'][0]['value']['restingHeartRate'],
+        'Resting Heart Rate': get_dict_element(hr_stats['activities-heart'][0]['value'], ['restingHeartRate']),
 
         'Zone0 Calories': hr_stats['activities-heart'][0]['value']['heartRateZones'][0]['caloriesOut'],
         'Zone0 Mxax': hr_stats['activities-heart'][0]['value']['heartRateZones'][0]['max'],
@@ -492,7 +502,8 @@ if __name__ == "__main__":
 
     print("Starting : {}, maximum days : {}".format(startdate.strftime("%Y-%m-%d"), limit))
 
-    data_directories = ["Sleep", "Steps", "Floors", "Calories", "Distance", "Heart", "Activities", "Data", "Cache"]
+    data_directories = ["Sleep", "Steps", "Floors", "Calories", "Distance", "Heart", "Activities",
+                        "Elevation", "Body", "Data", "Cache"]
     for dir_name in data_directories:
         create_directory_if_not_exist(dir_name)
 
@@ -505,23 +516,25 @@ if __name__ == "__main__":
 
         auth2_client = fitbit.Fitbit(FB_ID, FB_SECRET, oauth2=True, access_token=ACCESS_TOKEN,
                                      refresh_token=REFRESH_TOKEN)
-        time.sleep(1) # Keep cherry webserver log and app log seperated
+        # Keep cherry webserver log and app log seperated
+        time.sleep(1)
     else:
         auth2_client = None
 
-
-    while True:
-        for j in range(0, limit):
-            db_connection = sqlite3.connect('data/fitbit.db')
-            day_to_retrieve = startdate - datetime.timedelta(days=j)
-            print("{} : {}".format(j, day_to_retrieve.strftime("%Y-%m-%d")))
+    for j in range(0, limit):
+        db_connection = sqlite3.connect('data/fitbit.db')
+        day_to_retrieve = startdate - datetime.timedelta(days=j)
+        print("{} : {}".format(j, day_to_retrieve.strftime("%Y-%m-%d")))
+        day_handled = False
+        while not day_handled:
             try:
                 save_detailed_activities(auth2_client, db_connection, day_to_retrieve)
                 save_body(auth2_client, db_connection, day_to_retrieve)
-                save_sleep(auth2_client, db_connection, day_to_retrieve)
-                save_activities(auth2_client, db_connection, day_to_retrieve)
-                save_steps(auth2_client, db_connection, day_to_retrieve)
-                save_heart(auth2_client, db_connection, day_to_retrieve)
+                # save_sleep(auth2_client, db_connection, day_to_retrieve)
+                # save_activities(auth2_client, db_connection, day_to_retrieve)
+                # save_steps(auth2_client, db_connection, day_to_retrieve)
+                # save_heart(auth2_client, db_connection, day_to_retrieve)
+                day_handled = True
             except Exception as e:
                 print("Exception : " + str(e))
                 print("Time to sleep")
