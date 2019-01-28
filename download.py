@@ -41,6 +41,26 @@ def get_dict_element(dict, key1, key2=None, key3=None):
         return None
 
 
+def check_df_field_value(dataframe, column, row, value):
+    """
+    Check if the data stored in the dataframe, column key, row rownumber equals
+    the target date. Value is compared using the '==' operator
+    :param dataframe: The dataframe
+    :param column: Name of the column
+    :param row: Row number
+    :param value: target date
+    :return:
+    """
+    try:
+        field_value = str(dataframe[column].iloc[row])
+        if field_value == value:
+            return True
+        else:
+            return False
+    except:
+        return False
+
+
 def read_from_cache(name, date):
     """
     Read dictionary from cache
@@ -207,16 +227,6 @@ def save_detailed_activities(fb_client, db_conn, day):
     save_df(caldf, day_str, 'Calories/calories_intraday_', 'Calories_1m', db_conn, ['Date', 'Time'])
 
 
-def check_date(dataframe, key, target_date):
-    try:
-        leftside = str(dataframe[key].iloc[0])
-        if leftside == target_date:
-            return True
-        else:
-            return False
-    except:
-        return False
-
 def save_body(fb_client, db_conn, day):
     """
     Download and save body information from Fitbit API
@@ -239,7 +249,7 @@ def save_body(fb_client, db_conn, day):
         'Bodyfat': get_dict_element(weight_stats, 'weight', 0, 'fat'),
         'BMI': get_dict_element(weight_stats, 'weight', 0, 'bmi')
     }, index=[0])
-    if check_date(body_df, 'Date', day_str):
+    if check_df_field_value(body_df, 'Date', 0, day_str):
         save_df(body_df, day_str, 'Body/body__', 'Body', db_conn, ['Date'])
 
 def save_activities(fb_client, db_conn, day):
