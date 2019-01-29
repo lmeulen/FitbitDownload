@@ -9,14 +9,19 @@ import argparse
 import time
 
 
-def create_directory_if_not_exist(directory):
+def create_directory_if_not_exist(directory, subdirectory = None):
     """
     Create directory if it does not exist
     :param directory: name of directory to create
+    :param subdirectory: subdirectory of directory to create
     :return:
     """
-    if not os.path.exists(directory):
-        os.makedirs(directory)
+    if subdirectory:
+        dir = os.path.join(directory, subdirectory)
+    else:
+        dir = directory
+    if not os.path.exists(dir):
+        os.makedirs(dir)
 
 
 def get_dict_element(dict, key1, key2=None, key3=None):
@@ -61,6 +66,12 @@ def check_df_field_value(dataframe, column, row, value):
         return False
 
 
+def get_cache_filename(name, date):
+    year_subdir = date[:4]
+    fn = os.path.join("Cache", year_subdir, date + "_" + name + ".json")
+    return fn
+
+
 def read_from_cache(name, date):
     """
     Read dictionary from cache
@@ -68,12 +79,13 @@ def read_from_cache(name, date):
     :param date: date of data to retrieve
     :return: dict with data or None
     """
-    fn = os.path.join("Cache", date + "_" + name + ".json")
-    if os.path.isfile(fn):
-        print("Reading from cache : " + fn)
-        with open(fn, 'r') as fp:
-            data = json.load(fp)
-        return data
+    if cache_enabled:
+        fn = get_cache_filename(name, date)
+        if os.path.isfile(fn):
+            print("Reading from cache : " + fn)
+            with open(fn, 'r') as fp:
+                data = json.load(fp)
+            return data
     return None
 
 
@@ -85,7 +97,7 @@ def save_to_cache(name, date, data):
     :param data: the dict to store
     :return:
     """
-    fn = os.path.join("Cache", date + "_" + name + ".json")
+    fn = get_cache_filename(name, date)
     print("Storing to cache : " + fn)
     with open(fn, 'w') as fp:
         json.dump(data, fp)
@@ -167,7 +179,6 @@ def save_df(dataframe, logdate, filename, tablename, cnx, dup_cols, save_csv=Tru
 def save_detailed_activities(fb_client, db_conn, day):
     """
     Download and save detailed activity information from Fitbit API
-    At this moment, only store to cache
     Stores sleep day overview and summary
     :param fb_client: Fitbit Client
     :param db_conn: DB connection
@@ -251,6 +262,7 @@ def save_body(fb_client, db_conn, day):
     }, index=[0])
     if check_df_field_value(body_df, 'Date', 0, day_str):
         save_df(body_df, day_str, 'Body/body__', 'Body', db_conn, ['Date'])
+
 
 def save_activities(fb_client, db_conn, day):
     """
@@ -496,11 +508,14 @@ if __name__ == "__main__":
                         help="client-secret of your Fitbit app")
     parser.add_argument('--start', dest='startDate', default=datetime.datetime.now().strftime("%Y-%m-%d"),
                         help="Date (YYYY-MM-DD) from which to start the backward scraping. Default is today")
-    parser.add_argument('--limit', type=int, dest='limit', default=25,
-                        help="maximum number of days to download. Default is 25")
+    parser.add_argument('--limit', type=int, dest='limit', default=7,
+                        help="maximum number of days to download. Default is 7")
     parser.add_argument('--online', dest='online', action='store_true')
     parser.add_argument('--offline', dest='online', action='store_false')
     parser.set_defaults(online=True)
+    parser.add_argument('--no-cache', dest='cache', action='store_false',
+                        help='Do not use cached results but always download all data (cache is still updated')
+    parser.set_defaults(cache=True)
 
     arguments = parser.parse_args()
     FB_ID = arguments.clientId
@@ -508,14 +523,27 @@ if __name__ == "__main__":
     startdate = datetime.datetime.strptime(arguments.startDate, "%Y-%m-%d").date()
     limit = arguments.limit
     online = arguments.online
-    print("Online : " + str(online))
-
-    print("Starting : {}, maximum days : {}".format(startdate.strftime("%Y-%m-%d"), limit))
+    cache_enabled = arguments.cache
+    print("Configuration")
+    print("------------------------------------------------")
+    print("Fitbit ID     : " + FB_ID)
+    print("Fitbit Secret : " + FB_SECRET)
+    print("Online        : " + str(online))
+    print("Cache         : " + str(cache_enabled))
+    print("Start date    : " + startdate.strftime("%Y-%m-%d"))
+    print("Day limit     : " + str(limit))
+    exit()
 
     data_directories = ["Sleep", "Steps", "Floors", "Calories", "Distance", "Heart", "Activities",
-                        "Elevation", "Body", "Data", "Cache"]
+                        "Elevation", "Body", "Data"]
     for dir_name in data_directories:
         create_directory_if_not_exist(dir_name)
+
+    data_directories = ["Cache"]
+    years = ["2017", "2018", "2019"]
+    for dir_name in data_directories:
+        for year in years:
+            create_directory_if_not_exist(dir_name, year)
 
     if online:
         server = Oauth2.OAuth2Server(FB_ID, FB_SECRET)
@@ -535,15 +563,16 @@ if __name__ == "__main__":
         db_connection = sqlite3.connect('data/fitbit.db')
         day_to_retrieve = startdate - datetime.timedelta(days=j)
         print("{} : {}".format(j, day_to_retrieve.strftime("%Y-%m-%d")))
+        # Retry a date if the fitbit max request error occurs
         day_handled = False
         while not day_handled:
             try:
                 save_detailed_activities(auth2_client, db_connection, day_to_retrieve)
                 save_body(auth2_client, db_connection, day_to_retrieve)
-                # save_sleep(auth2_client, db_connection, day_to_retrieve)
-                # save_activities(auth2_client, db_connection, day_to_retrieve)
-                # save_steps(auth2_client, db_connection, day_to_retrieve)
-                # save_heart(auth2_client, db_connection, day_to_retrieve)
+                save_sleep(auth2_client, db_connection, day_to_retrieve)
+                save_activities(auth2_client, db_connection, day_to_retrieve)
+                save_steps(auth2_client, db_connection, day_to_retrieve)
+                save_heart(auth2_client, db_connection, day_to_retrieve)
                 day_handled = True
             except Exception as e:
                 print("Exception : " + str(e))
