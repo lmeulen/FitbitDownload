@@ -532,7 +532,7 @@ if __name__ == "__main__":
     print("Cache         : " + str(cache_enabled))
     print("Start date    : " + startdate.strftime("%Y-%m-%d"))
     print("Day limit     : " + str(limit))
-    exit()
+    print("------------------------------------------------")
 
     data_directories = ["Sleep", "Steps", "Floors", "Calories", "Distance", "Heart", "Activities",
                         "Elevation", "Body", "Data"]
