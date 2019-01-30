@@ -17,31 +17,31 @@ def create_directory_if_not_exist(directory, subdirectory = None):
     :return:
     """
     if subdirectory:
-        dir = os.path.join(directory, subdirectory)
+        dir_name = os.path.join(directory, subdirectory)
     else:
-        dir = directory
-    if not os.path.exists(dir):
-        os.makedirs(dir)
+        dir_name = directory
+    if not os.path.exists(dir_name):
+        os.makedirs(dir_name)
 
 
-def get_dict_element(dict, key1, key2=None, key3=None):
+def get_dict_element(dictionary, key1, key2=None, key3=None):
     """
     Return an item from a dictionary, maximum three levels deep. Keys
     can be integers or strings.
     Can also handle lists
-    :param dict: Dictionary
+    :param dictionary: Dictionary
     :param key1: First level key
     :param key2: Second level key
     :param key3: Third level key
     :return:
     """
-    try :
+    try:
         if key3:
-            return dict[key1][key2][key3]
+            return dictionary[key1][key2][key3]
         elif key2:
-            return dict[key1][key2]
+            return dictionary[key1][key2]
         else:
-            return dict[key1]
+            return dictionary[key1]
     except:
         return None
 
@@ -297,7 +297,7 @@ def save_activities(fb_client, db_conn, day):
         'Distance': act_stats['summary']['distances'][0]['distance'],
         'Elevation': act_stats['summary']['elevation'],
         'Floors': act_stats['summary']['floors'],
-        'Resting Heart Rate': act_stats['summary']['restingHeartRate'],
+        'Resting Heart Rate': get_dict_element(act_stats, 'summary', 'restingHeartRate'),
         'Activity Calories': act_stats['summary']['activityCalories'],
         'Calories BMR': act_stats['summary']['caloriesBMR'],
         'Marginal Calories': act_stats['summary']['marginalCalories'],
@@ -414,7 +414,8 @@ def save_sleep(fb_client, db_conn, day):
             val_list.append(i['value'])
             time_list.append(i['dateTime'])
     sleepmin_df = pd.DataFrame({'Date': date_list, 'LogID': logid_list, 'Time': time_list, 'Value': val_list})
-    save_df(sleepmin_df, day_str, 'Sleep/sleep_minlog_', 'Sleep_Min_Log', db_conn, ['Date', 'LogID', 'Time'])
+    sleepmin_df['interpreted'] = sleepmin_df['Value'].map({'2': 'Restless', '3': 'Awake', '1': 'Asleep'})
+    save_df(sleepmin_df, day_str, 'Sleep/sleep_minlog_', 'Sleep_1m', db_conn, ['Date', 'LogID', 'Time'])
 
 
 def save_steps(fb_client, db_conn, day):
@@ -441,7 +442,7 @@ def save_steps(fb_client, db_conn, day):
         val_list.append(i['value'])
         time_list.append(i['time'])
     stepsdf = pd.DataFrame({'Date': date_list, 'Time': time_list, 'Steps': val_list})
-    save_df(stepsdf, day_str, 'Steps/steps_intraday_', 'Steps', db_conn, ['Date', 'Time'])
+    save_df(stepsdf, day_str, 'Steps/steps_intraday_', 'Steps_1m', db_conn, ['Date', 'Time'])
 
     summary = pd.DataFrame({
         'Date': step_stats['activities-steps'][0]['dateTime'],
@@ -533,6 +534,7 @@ if __name__ == "__main__":
     print("Start date    : " + startdate.strftime("%Y-%m-%d"))
     print("Day limit     : " + str(limit))
     print("------------------------------------------------")
+    time.sleep(1)
 
     data_directories = ["Sleep", "Steps", "Floors", "Calories", "Distance", "Heart", "Activities",
                         "Elevation", "Body", "Data"]
@@ -553,12 +555,13 @@ if __name__ == "__main__":
         REFRESH_TOKEN = str(server.fitbit.client.session.token['refresh_token'])
 
         auth2_client = fitbit.Fitbit(FB_ID, FB_SECRET, oauth2=True, access_token=ACCESS_TOKEN,
-                                     refresh_token=REFRESH_TOKEN)
+                                     refresh_token=REFRESH_TOKEN, system="en_UK")
         # Keep cherry webserver log and app log seperated
         time.sleep(1)
     else:
         auth2_client = None
 
+    first_date_of_data = datetime.datetime.strptime("2017-09-23", "%Y-%m-%d").date()
     for j in range(0, limit):
         db_connection = sqlite3.connect('data/fitbit.db')
         day_to_retrieve = startdate - datetime.timedelta(days=j)
@@ -567,12 +570,13 @@ if __name__ == "__main__":
         day_handled = False
         while not day_handled:
             try:
-                save_detailed_activities(auth2_client, db_connection, day_to_retrieve)
-                save_body(auth2_client, db_connection, day_to_retrieve)
-                save_sleep(auth2_client, db_connection, day_to_retrieve)
-                save_activities(auth2_client, db_connection, day_to_retrieve)
-                save_steps(auth2_client, db_connection, day_to_retrieve)
-                save_heart(auth2_client, db_connection, day_to_retrieve)
+                if day_to_retrieve >= first_date_of_data:
+                    save_detailed_activities(auth2_client, db_connection, day_to_retrieve)
+                    save_body(auth2_client, db_connection, day_to_retrieve)
+                    save_sleep(auth2_client, db_connection, day_to_retrieve)
+                    save_activities(auth2_client, db_connection, day_to_retrieve)
+                    save_steps(auth2_client, db_connection, day_to_retrieve)
+                    save_heart(auth2_client, db_connection, day_to_retrieve)
                 day_handled = True
             except Exception as e:
                 print("Exception : " + str(e))
