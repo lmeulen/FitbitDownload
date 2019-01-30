@@ -8,6 +8,7 @@ import json
 import argparse
 import time
 
+DEBUG_CACHE = False
 
 def create_directory_if_not_exist(directory, subdirectory = None):
     """
@@ -82,7 +83,8 @@ def read_from_cache(name, date):
     if cache_enabled:
         fn = get_cache_filename(name, date)
         if os.path.isfile(fn):
-            print("Reading from cache : " + fn)
+            if DEBUG_CACHE:
+                print("Reading from cache : " + fn)
             with open(fn, 'r') as fp:
                 data = json.load(fp)
             return data
@@ -98,7 +100,8 @@ def save_to_cache(name, date, data):
     :return:
     """
     fn = get_cache_filename(name, date)
-    print("Storing to cache : " + fn)
+    if DEBUG_CACHE:
+        print("Storing to cache : " + fn)
     with open(fn, 'w') as fp:
         json.dump(data, fp)
 
