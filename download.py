@@ -507,6 +507,8 @@ if __name__ == "__main__":
                         help="client-id of your Fitbit app")
     parser.add_argument('--secret', metavar='clientSecret', dest='clientSecret', required=True,
                         help="client-secret of your Fitbit app")
+    parser.add_argument('--first', dest='firstDate', default=datetime.datetime.now().strftime("2017-09-24"),
+                        help="Date (YYYY-MM-DD) of oldest Fitbit data")
     parser.add_argument('--start', dest='startDate', default=datetime.datetime.now().strftime("%Y-%m-%d"),
                         help="Date (YYYY-MM-DD) from which to start the backward scraping. Default is today")
     parser.add_argument('--limit', type=int, dest='limit', default=7,
@@ -522,17 +524,19 @@ if __name__ == "__main__":
     FB_ID = arguments.clientId
     FB_SECRET = arguments.clientSecret
     startdate = datetime.datetime.strptime(arguments.startDate, "%Y-%m-%d").date()
+    first_date_of_data = datetime.datetime.strptime(arguments.firstDate, "%Y-%m-%d").date()
     limit = arguments.limit
     online = arguments.online
     cache_enabled = arguments.cache
     print("Configuration")
     print("------------------------------------------------")
-    print("Fitbit ID     : " + FB_ID)
-    print("Fitbit Secret : " + FB_SECRET)
-    print("Online        : " + str(online))
-    print("Cache         : " + str(cache_enabled))
-    print("Start date    : " + startdate.strftime("%Y-%m-%d"))
-    print("Day limit     : " + str(limit))
+    print("Fitbit ID        : " + FB_ID)
+    print("Fitbit Secret    : " + FB_SECRET)
+    print("Oldest available : " + first_date_of_data.strftime("%Y-%m-%d"))
+    print("Online           : " + str(online))
+    print("Cache            : " + str(cache_enabled))
+    print("Start date       : " + startdate.strftime("%Y-%m-%d"))
+    print("Day limit        : " + str(limit))
     print("------------------------------------------------")
     time.sleep(1)
 
@@ -561,7 +565,6 @@ if __name__ == "__main__":
     else:
         auth2_client = None
 
-    first_date_of_data = datetime.datetime.strptime("2017-09-23", "%Y-%m-%d").date()
     for j in range(0, limit):
         db_connection = sqlite3.connect('data/fitbit.db')
         day_to_retrieve = startdate - datetime.timedelta(days=j)
