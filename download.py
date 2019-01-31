@@ -7,8 +7,28 @@ import os
 import json
 import argparse
 import time
+import traceback
 
+# Switch for debug messages from the cache
 DEBUG_CACHE = False
+
+
+def create_directories():
+    """
+    Create required directories for storing cache, CSV data and SQLite database
+    :return:
+    """
+    data_directories = ["Sleep", "Steps", "Floors", "Calories", "Distance", "Heart", "Activities",
+                        "Elevation", "Body", "Data"]
+    for dir_name in data_directories:
+        create_directory_if_not_exist(dir_name)
+
+    data_directories = ["Cache"]
+    years = ["2017", "2018", "2019"]
+    for dir_name in data_directories:
+        for year in years:
+            create_directory_if_not_exist(dir_name, year)
+
 
 def create_directory_if_not_exist(directory, subdirectory = None):
     """
@@ -68,6 +88,15 @@ def check_df_field_value(dataframe, column, row, value):
 
 
 def get_cache_filename(name, date):
+    """
+    Determine the filename for caching, including subdirs
+    Generic function for the store and retrieve methods to assure
+    same filename convention is used.
+    Path = Cache/<year>/<date>_<name>.json
+    :param name: Filename
+    :param date: Date of the data (string, format YYYY-MM-DD)
+    :return:
+    """
     year_subdir = date[:4]
     fn = os.path.join("Cache", year_subdir, date + "_" + name + ".json")
     return fn
@@ -503,8 +532,39 @@ def save_heart(fb_client, db_conn, day):
     save_df(summary, day_str, 'Heart/heart_daysummary_', 'Heartrate_Summary', db_conn, ['Date'])
 
 
-if __name__ == "__main__":
+def get_fitbit_client(id, secret):
+    server = Oauth2.OAuth2Server(id, secret)
+    server.browser_authorize()
+    access_token = str(server.fitbit.client.session.token['access_token'])
+    refresh_token = str(server.fitbit.client.session.token['refresh_token'])
+    auth2_client = fitbit.Fitbit(FB_ID, FB_SECRET, oauth2=True, access_token=access_token,
+                                 refresh_token=refresh_token, system="en_UK")
+    # Keep cherry webserver log and app log seperated
+    time.sleep(1)
+    return auth2_client
 
+
+def save_fitbit_data(fitbit_client, database_connection, day):
+    """
+    Download and save the fitbit data for a specific day
+    :param fitbit_client: Fitbit API Client
+    :param database_connection: Connection to the database
+    :param day: day to retrieve (type: Datetime object)
+    :return:
+    """
+    save_detailed_activities(fitbit_client, database_connection, day)
+    save_body(fitbit_client, database_connection, day)
+    save_sleep(fitbit_client, database_connection, day)
+    save_activities(fitbit_client, database_connection, day)
+    save_steps(fitbit_client, database_connection, day)
+    save_heart(fitbit_client, database_connection, day)
+
+
+def get_arguments():
+    """
+    Handle application arguments
+    :return: arguments object
+    """
     parser = argparse.ArgumentParser(description='Fitbit Scraper')
     parser.add_argument('--id', metavar='clientId', dest='clientId', required=True,
                         help="client-id of your Fitbit app")
@@ -522,8 +582,13 @@ if __name__ == "__main__":
     parser.add_argument('--no-cache', dest='cache', action='store_false',
                         help='Do not use cached results but always download all data (cache is still updated')
     parser.set_defaults(cache=True)
+    return parser.parse_args()
 
-    arguments = parser.parse_args()
+
+if __name__ == "__main__":
+
+    # Parse and handle application arguments
+    arguments = get_arguments()
     FB_ID = arguments.clientId
     FB_SECRET = arguments.clientSecret
     startdate = datetime.datetime.strptime(arguments.startDate, "%Y-%m-%d").date()
@@ -531,6 +596,17 @@ if __name__ == "__main__":
     limit = arguments.limit
     online = arguments.online
     cache_enabled = arguments.cache
+
+    # Assure directories are present to store the data
+    create_directories()
+
+    # Get a Fitbit client, but only if onlie is enabled
+    if online:
+        auth2_client = get_fitbit_client(FB_ID, FB_SECRET)
+    else:
+        auth2_client = None
+
+    # Shoe download configuration
     print("Configuration")
     print("------------------------------------------------")
     print("Fitbit ID        : " + FB_ID)
@@ -541,52 +617,45 @@ if __name__ == "__main__":
     print("Start date       : " + startdate.strftime("%Y-%m-%d"))
     print("Day limit        : " + str(limit))
     print("------------------------------------------------")
-    time.sleep(1)
-
-    data_directories = ["Sleep", "Steps", "Floors", "Calories", "Distance", "Heart", "Activities",
-                        "Elevation", "Body", "Data"]
-    for dir_name in data_directories:
-        create_directory_if_not_exist(dir_name)
-
-    data_directories = ["Cache"]
-    years = ["2017", "2018", "2019"]
-    for dir_name in data_directories:
-        for year in years:
-            create_directory_if_not_exist(dir_name, year)
-
-    if online:
-        server = Oauth2.OAuth2Server(FB_ID, FB_SECRET)
-        server.browser_authorize()
-
-        ACCESS_TOKEN = str(server.fitbit.client.session.token['access_token'])
-        REFRESH_TOKEN = str(server.fitbit.client.session.token['refresh_token'])
-
-        auth2_client = fitbit.Fitbit(FB_ID, FB_SECRET, oauth2=True, access_token=ACCESS_TOKEN,
-                                     refresh_token=REFRESH_TOKEN, system="en_UK")
-        # Keep cherry webserver log and app log seperated
-        time.sleep(1)
-    else:
-        auth2_client = None
 
     for j in range(0, limit):
+        # Open database connection per data
+        # Prevents acceidental data loss
         db_connection = sqlite3.connect('data/fitbit.db')
         day_to_retrieve = startdate - datetime.timedelta(days=j)
-        print("{} : {}".format(j, day_to_retrieve.strftime("%Y-%m-%d")))
+
         # Retry a date if the fitbit max request error occurs
         day_handled = False
         while not day_handled:
             try:
+                print("Downloading day {} : {}".format(j, day_to_retrieve.strftime("%Y-%m-%d")))
+                # Only retrieve if there is data for this date
+                # Prevents reading before the data Fitbit data is available
                 if day_to_retrieve >= first_date_of_data:
-                    save_detailed_activities(auth2_client, db_connection, day_to_retrieve)
-                    save_body(auth2_client, db_connection, day_to_retrieve)
-                    save_sleep(auth2_client, db_connection, day_to_retrieve)
-                    save_activities(auth2_client, db_connection, day_to_retrieve)
-                    save_steps(auth2_client, db_connection, day_to_retrieve)
-                    save_heart(auth2_client, db_connection, day_to_retrieve)
+                    save_fitbit_data(auth2_client, db_connection, day_to_retrieve)
+                # REtrievel is succesfull so continu to next day
                 day_handled = True
+
+            except fitbit.exceptions.HTTPTooManyRequests:
+                # Too many request to the Fitbit API, sleep and retry
+                print("Too many request, time to sleep")
+                time.sleep(300)
+
+            # except ???:
+            #     # access token no longer valid. Retrieve new token
+            #     # and retry download
+            #     auth2_client = get_fitbit_client(FB_ID, FB_SECRET)
+
             except Exception as e:
+                # Unexpected error. Print the error and exit the application
+                # Detailed error infomration is printed to ease problem solving
                 print("Exception : " + str(e))
-                print("Time to sleep")
-                time.sleep(3600)
+                traceback.print_exc()
+                print("")
+                error = traceback.format_exc()
+                print(error.upper())
+                print("Goodbye!")
+                exit()
             finally:
+                # Close database connection and commit changes
                 db_connection.commit()
