@@ -19,7 +19,7 @@ def create_directories():
     :return:
     """
     data_directories = ["Sleep", "Steps", "Floors", "Calories", "Distance", "Heart", "Activities",
-                        "Elevation", "Body", "Data"]
+                        "Elevation", "Body", "Daily", "Data"]
     for dir_name in data_directories:
         create_directory_if_not_exist(dir_name)
 
@@ -529,7 +529,116 @@ def save_heart(fb_client, db_conn, day):
         'Zone3 Minutes': hr_stats['activities-heart'][0]['value']['heartRateZones'][3]['minutes'],
         'Zone3 Name': hr_stats['activities-heart'][0]['value']['heartRateZones'][3]['name']
     }, index=[0])
+
     save_df(summary, day_str, 'Heart/heart_daysummary_', 'Heartrate_Summary', db_conn, ['Date'])
+
+
+def create_daily_summary(day, db_conn):
+    """
+    Create a daily summary in the corresponding table
+    Assumption: all data available in the cache
+    :param day: day to summarize
+    :param db_conn: Database connection for storing result
+    :return:
+    """
+
+    # Load data from cache (sleep and activitites
+    day_str = str(day.strftime("%Y-%m-%d"))
+    act_stats = read_from_cache("activities", day_str)
+    sleep_stats = read_from_cache("sleep", day_str)
+    hr_stats = read_from_cache("heart_1m", day_str)
+    sleep_stats = read_from_cache("sleep", day_str)
+
+    # Check if data present
+    if not act_stats:
+        return
+
+    # Find main sleep
+    mainsleep_stats = None
+    i = 0
+    for rec2 in sleep_stats['sleep']:
+        if rec2['isMainSleep']:
+            mainsleep_stats = rec2
+
+    # Create summary dataframe
+    summary = pd.DataFrame({
+        'Date': day_str,
+
+        'Goal Active Minutes': get_dict_element(act_stats, 'goals', 'activeMinutes'),
+        'Goal Calories Out': get_dict_element(act_stats, 'goals', 'caloriesOut'),
+        'Goal Distance': get_dict_element(act_stats, 'goals', 'distance'),
+        'Goal Floors': get_dict_element(act_stats, 'goals', 'floors'),
+        'Goal Steps': get_dict_element(act_stats, 'goals', 'steps'),
+
+        'Active Score': act_stats['summary']['activeScore'],
+        'Steps': act_stats['summary']['steps'],
+        'Distance': act_stats['summary']['distances'][0]['distance'],
+        'Elevation': act_stats['summary']['elevation'],
+        'Floors': act_stats['summary']['floors'],
+
+        'Resting Heart Rate': get_dict_element(act_stats, 'summary', 'restingHeartRate'),
+
+        'Activity Calories': act_stats['summary']['activityCalories'],
+        'Calories BMR': act_stats['summary']['caloriesBMR'],
+        'Marginal Calories': act_stats['summary']['marginalCalories'],
+        'Calories Out': act_stats['summary']['caloriesOut'],
+        'Sedentary Minutes': act_stats['summary']['sedentaryMinutes'],
+        'Lightly Active Minutes': act_stats['summary']['lightlyActiveMinutes'],
+        'Fairly Active Minutes': act_stats['summary']['fairlyActiveMinutes'],
+        'Very Active Minutes': act_stats['summary']['veryActiveMinutes'],
+
+        'Minutes Asleep': get_dict_element(sleep_stats, 'summary', 'totalMinutesAsleep'),
+        'Sleep Records': get_dict_element(sleep_stats, 'summary', 'totalSleepRecords'),
+        'Time in Bed': get_dict_element(sleep_stats, 'summary', 'totalTimeInBed'),
+        'Stage Deep': get_dict_element(sleep_stats, 'summary', 'stages', 'deep'),
+        'Stage Light': get_dict_element(sleep_stats, 'summary', 'stages', 'light'),
+        'Stage REM': get_dict_element(sleep_stats, 'summary', 'stages', 'rem'),
+        'Stage Wake': get_dict_element(sleep_stats, 'summary', 'stages', 'wake'),
+
+        'Zone0 Calories': hr_stats['activities-heart'][0]['value']['heartRateZones'][0]['caloriesOut'],
+        'Zone0 Mxax': hr_stats['activities-heart'][0]['value']['heartRateZones'][0]['max'],
+        'Zone0 Min': hr_stats['activities-heart'][0]['value']['heartRateZones'][0]['min'],
+        'Zone0 Minutes': hr_stats['activities-heart'][0]['value']['heartRateZones'][0]['minutes'],
+        'Zone0  Name': hr_stats['activities-heart'][0]['value']['heartRateZones'][0]['name'],
+
+        'Zone1 Calories': hr_stats['activities-heart'][0]['value']['heartRateZones'][1]['caloriesOut'],
+        'Zone1 Max': hr_stats['activities-heart'][0]['value']['heartRateZones'][1]['max'],
+        'Zone1 Min': hr_stats['activities-heart'][0]['value']['heartRateZones'][1]['min'],
+        'Zone1 Minutes': hr_stats['activities-heart'][0]['value']['heartRateZones'][1]['minutes'],
+        'Zone1 Name': hr_stats['activities-heart'][0]['value']['heartRateZones'][1]['name'],
+
+        'Zone2 Calories': hr_stats['activities-heart'][0]['value']['heartRateZones'][2]['caloriesOut'],
+        'Zone2 Max': hr_stats['activities-heart'][0]['value']['heartRateZones'][2]['max'],
+        'Zone2 Min': hr_stats['activities-heart'][0]['value']['heartRateZones'][2]['min'],
+        'Zone2 Minutes': hr_stats['activities-heart'][0]['value']['heartRateZones'][2]['minutes'],
+        'Zone2 Name': hr_stats['activities-heart'][0]['value']['heartRateZones'][2]['name'],
+
+        'Zone3 Calories': hr_stats['activities-heart'][0]['value']['heartRateZones'][3]['caloriesOut'],
+        'Zone3 Max': hr_stats['activities-heart'][0]['value']['heartRateZones'][3]['max'],
+        'Zone3 Min': hr_stats['activities-heart'][0]['value']['heartRateZones'][3]['min'],
+        'Zone3 Minutes': hr_stats['activities-heart'][0]['value']['heartRateZones'][3]['minutes'],
+        'Zone3 Name': hr_stats['activities-heart'][0]['value']['heartRateZones'][3]['name'],
+
+        'Sleep Start Time': get_dict_element(mainsleep_stats, 'startTime'),
+        'Sleep End Time': get_dict_element(mainsleep_stats, 'endTime'),
+        'Sleep Time In Bed': get_dict_element(mainsleep_stats, 'timeInBed'),
+        'Sleep Awake Count': get_dict_element(mainsleep_stats, 'awakeCount'),
+        'Sleep Awake Duration': get_dict_element(mainsleep_stats, 'awakeDuration'),
+        'Sleep Awakenings Count': get_dict_element(mainsleep_stats, 'awakeningsCount'),
+        'Sleep Duration': get_dict_element(mainsleep_stats, 'duration'),
+        'Sleep Efficiency': get_dict_element(mainsleep_stats, 'efficiency'),
+        'Sleep Minutes After Wakeup': get_dict_element(mainsleep_stats, 'minutesAfterWakeup'),
+        'Sleep Minutes Asleep': get_dict_element(mainsleep_stats, 'minutesAsleep'),
+        'Sleep Minutes Awake': get_dict_element(mainsleep_stats, 'minutesAwake'),
+        'Sleep Minutes To Fall Asleep': get_dict_element(mainsleep_stats, 'minutesToFallAsleep'),
+        'Sleep Restless Count': get_dict_element(mainsleep_stats, 'restlessCount'),
+        'Sleep Restless Duration': get_dict_element(mainsleep_stats, 'restlessDuration')
+
+    }, index=[0])
+    #
+    # Add main sleep
+    #
+    save_df(summary, day_str, 'Daily/daily_summary_', 'Daily_Summary', db_conn, ['Date'])
 
 
 def get_fitbit_client(id, secret):
@@ -591,7 +700,7 @@ if __name__ == "__main__":
     arguments = get_arguments()
     FB_ID = arguments.clientId
     FB_SECRET = arguments.clientSecret
-    startdate = datetime.datetime.strptime(arguments.startDate, "%Y-%m-%d").date()
+    start_date = datetime.datetime.strptime(arguments.startDate, "%Y-%m-%d").date()
     first_date_of_data = datetime.datetime.strptime(arguments.firstDate, "%Y-%m-%d").date()
     limit = arguments.limit
     online = arguments.online
@@ -614,7 +723,7 @@ if __name__ == "__main__":
     print("Oldest available : " + first_date_of_data.strftime("%Y-%m-%d"))
     print("Online           : " + str(online))
     print("Cache            : " + str(cache_enabled))
-    print("Start date       : " + startdate.strftime("%Y-%m-%d"))
+    print("Start date       : " + start_date.strftime("%Y-%m-%d"))
     print("Day limit        : " + str(limit))
     print("------------------------------------------------")
 
@@ -622,7 +731,7 @@ if __name__ == "__main__":
         # Open database connection per data
         # Prevents acceidental data loss
         db_connection = sqlite3.connect('data/fitbit.db')
-        day_to_retrieve = startdate - datetime.timedelta(days=j)
+        day_to_retrieve = start_date - datetime.timedelta(days=j)
 
         # Retry a date if the fitbit max request error occurs
         day_handled = False
@@ -633,7 +742,8 @@ if __name__ == "__main__":
                 # Prevents reading before the data Fitbit data is available
                 if day_to_retrieve >= first_date_of_data:
                     save_fitbit_data(auth2_client, db_connection, day_to_retrieve)
-                # REtrievel is succesfull so continu to next day
+                    create_daily_summary(day_to_retrieve, db_connection)
+                # Retrievel is succesfull so continu to next day
                 day_handled = True
 
             except fitbit.exceptions.HTTPTooManyRequests:
@@ -648,7 +758,7 @@ if __name__ == "__main__":
 
             except Exception as e:
                 # Unexpected error. Print the error and exit the application
-                # Detailed error infomration is printed to ease problem solving
+                # Detailed error information is printed to ease problem solving
                 print("Exception : " + str(e))
                 traceback.print_exc()
                 print("")
