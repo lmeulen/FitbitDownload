@@ -1,13 +1,13 @@
-import fitbit
-import gather_keys_oauth2 as Oauth2
-import pandas as pd
-import datetime
-import sqlite3
 import os
 import json
 import argparse
 import time
 import traceback
+import datetime
+import sqlite3
+import fitbit
+import gather_keys_oauth2 as Oauth2
+import pandas as pd
 
 # Switch for debug messages from the cache
 DEBUG_CACHE = False
@@ -30,7 +30,7 @@ def create_directories():
             create_directory_if_not_exist(dir_name, year)
 
 
-def create_directory_if_not_exist(directory, subdirectory = None):
+def create_directory_if_not_exist(directory, subdirectory=None):
     """
     Create directory if it does not exist
     :param directory: name of directory to create
@@ -87,18 +87,17 @@ def check_df_field_value(dataframe, column, row, value):
         return False
 
 
-def day_present(db_connection, day):
+def day_present(conn, day):
     """
     Check if specified data is present in the database
-    :param db_connection: Database connection
+    :param conn: Database connection
     :param day: date to check
     :return: True, if date is present
     """
-
     try:
         day_str = str(day.strftime("%Y-%m-%d"))
         query = "select * from Daily_Summary where Date == '" + day_str + "'"
-        df = pd.read_sql(query, db_connection)
+        df = pd.read_sql(query, conn)
         return not df.empty
     except:
         return False
@@ -564,7 +563,6 @@ def create_daily_summary(day, db_conn):
     act_stats = read_from_cache("activities", day_str)
     sleep_stats = read_from_cache("sleep", day_str)
     hr_stats = read_from_cache("heart_1m", day_str)
-    sleep_stats = read_from_cache("sleep", day_str)
 
     # Check if data present
     if not act_stats:
@@ -572,7 +570,6 @@ def create_daily_summary(day, db_conn):
 
     # Find main sleep
     mainsleep_stats = None
-    i = 0
     for rec2 in sleep_stats['sleep']:
         if rec2['isMainSleep']:
             mainsleep_stats = rec2
@@ -663,11 +660,11 @@ def get_fitbit_client(fb_id, fb_secret):
     server.browser_authorize()
     access_token = str(server.fitbit.client.session.token['access_token'])
     refresh_token = str(server.fitbit.client.session.token['refresh_token'])
-    auth2_client = fitbit.Fitbit(fb_id, fb_secret, oauth2=True, access_token=access_token,
-                                 refresh_token=refresh_token, system="en_UK")
+    client = fitbit.Fitbit(fb_id, fb_secret, oauth2=True, access_token=access_token,
+                           refresh_token=refresh_token, system="en_UK")
     # Keep cherry webserver log and app log seperated
     time.sleep(1)
-    return auth2_client
+    return client
 
 
 def save_fitbit_data(fitbit_client, database_connection, day):
