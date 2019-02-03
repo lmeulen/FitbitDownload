@@ -87,6 +87,23 @@ def check_df_field_value(dataframe, column, row, value):
         return False
 
 
+def day_present(db_connection, day):
+    """
+    Check if specified data is present in the database
+    :param db_connection: Database connection
+    :param day: date to check
+    :return: True, if date is present
+    """
+
+    try:
+        day_str = str(day.strftime("%Y-%m-%d"))
+        query = "select * from Daily_Summary where Date == '" + day_str + "'"
+        df = pd.read_sql(query, db_connection)
+        return not df.empty
+    except:
+        return False
+
+
 def get_cache_filename(name, date):
     """
     Determine the filename for caching, including subdirs
@@ -641,12 +658,12 @@ def create_daily_summary(day, db_conn):
     save_df(summary, day_str, 'Daily/daily_summary_', 'Daily_Summary', db_conn, ['Date'])
 
 
-def get_fitbit_client(id, secret):
-    server = Oauth2.OAuth2Server(id, secret)
+def get_fitbit_client(fb_id, fb_secret):
+    server = Oauth2.OAuth2Server(fb_id, fb_secret)
     server.browser_authorize()
     access_token = str(server.fitbit.client.session.token['access_token'])
     refresh_token = str(server.fitbit.client.session.token['refresh_token'])
-    auth2_client = fitbit.Fitbit(FB_ID, FB_SECRET, oauth2=True, access_token=access_token,
+    auth2_client = fitbit.Fitbit(fb_id, fb_secret, oauth2=True, access_token=access_token,
                                  refresh_token=refresh_token, system="en_UK")
     # Keep cherry webserver log and app log seperated
     time.sleep(1)
@@ -729,7 +746,7 @@ if __name__ == "__main__":
 
     for j in range(0, limit):
         # Open database connection per data
-        # Prevents acceidental data loss
+        # Prevents accidental data loss
         db_connection = sqlite3.connect('data/fitbit.db')
         day_to_retrieve = start_date - datetime.timedelta(days=j)
 
@@ -740,7 +757,8 @@ if __name__ == "__main__":
                 print("Downloading day {} : {}".format(j, day_to_retrieve.strftime("%Y-%m-%d")))
                 # Only retrieve if there is data for this date
                 # Prevents reading before the data Fitbit data is available
-                if day_to_retrieve >= first_date_of_data:
+                # If summary record ia available, do not read
+                if day_to_retrieve >= first_date_of_data and not day_present(db_connection, day_to_retrieve):
                     save_fitbit_data(auth2_client, db_connection, day_to_retrieve)
                     create_daily_summary(day_to_retrieve, db_connection)
                 # Retrievel is succesfull so continu to next day
