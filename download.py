@@ -688,14 +688,15 @@ def get_arguments():
     Handle application arguments
     :return: arguments object
     """
+    yesterday = (datetime.datetime.now() - datetime.timedelta(days=1)).strftime("%Y-%m-%d")
     parser = argparse.ArgumentParser(description='Fitbit Scraper')
     parser.add_argument('--id', metavar='clientId', dest='clientId', required=True,
                         help="client-id of your Fitbit app")
     parser.add_argument('--secret', metavar='clientSecret', dest='clientSecret', required=True,
                         help="client-secret of your Fitbit app")
-    parser.add_argument('--first', dest='firstDate', default=datetime.datetime.now().strftime("2017-09-24"),
+    parser.add_argument('--first', dest='firstDate', default="2017-09-24",
                         help="Date (YYYY-MM-DD) of oldest Fitbit data")
-    parser.add_argument('--start', dest='startDate', default=datetime.datetime.now().strftime("%Y-%m-%d"),
+    parser.add_argument('--start', dest='startDate', default=yesterday,
                         help="Date (YYYY-MM-DD) from which to start the backward scraping. Default is today")
     parser.add_argument('--limit', type=int, dest='limit', default=7,
                         help="maximum number of days to download. Default is 7")
@@ -751,13 +752,15 @@ if __name__ == "__main__":
         day_handled = False
         while not day_handled:
             try:
-                print("Downloading day {} : {}".format(j, day_to_retrieve.strftime("%Y-%m-%d")))
                 # Only retrieve if there is data for this date
                 # Prevents reading before the data Fitbit data is available
                 # If summary record ia available, do not read
                 if day_to_retrieve >= first_date_of_data and not day_present(db_connection, day_to_retrieve):
+                    print("Downloading day {} : {}".format(j, day_to_retrieve.strftime("%Y-%m-%d")))
                     save_fitbit_data(auth2_client, db_connection, day_to_retrieve)
                     create_daily_summary(day_to_retrieve, db_connection)
+                else:
+                    print("Skipping day {} : {}".format(j, day_to_retrieve.strftime("%Y-%m-%d")))
                 # Retrievel is succesfull so continu to next day
                 day_handled = True
 
