@@ -18,11 +18,12 @@ Download the fitbit data of a user. Data can be stored as CSV and/or SQLite data
 
 Only the first two arguments are mandatory. 
 
-If no starting date is specified, the app starts with dwonloading yesterday since this is the last complete day of Fitbit logging.
+If no starting date is specified, the app starts downloading yesterday (since this is the last complete day of Fitbit logging). The default number of days ti downlaod is 7.
+If data is already downloaded, it is read from the cache instead of the API (reduces use of the API and inproves speed),
 
 ## Dependencies ##
-- fitbit-api. Obtain from github abd extract in the root of this app
-- calmap. Install with pip install calmap (only used in the notebooks)
+- ```python-fitbit```. Obtain from github (https://github.com/orcasgit/python-fitbit) and extract in the root of this app
+- ```calmap```. Install with pip install calmap (only used in the notebooks)
 
 ## Data storage ##
 During download, the following datastructure is created:
@@ -47,3 +48,6 @@ During download, the following datastructure is created:
 - The cached responses are stored as JSON. The original repsonse is stored.
 - The datafiles are stored as csv (per day).
 - The database is in SQLite format.
+
+## Notebooks ##
+For educational purposes two notebooks are present. These use the SQLite database file as input.
