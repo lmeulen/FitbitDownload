@@ -19,7 +19,7 @@ def create_directories():
     :return:
     """
     data_directories = ["Sleep", "Steps", "Floors", "Calories", "Distance", "Heart", "Activities",
-                        "Elevation", "Body", "Daily", "Data"]
+                        "Elevation", "Body", "Daily", "Data", "Training"]
     for dir_name in data_directories:
         create_directory_if_not_exist(dir_name)
 
@@ -391,6 +391,52 @@ def save_activities(fb_client, db_conn, day):
     save_df(hr_df, day_str, 'Activities/hr_zones_', 'HeartRate_Zones', db_conn, ['Date', 'Name'])
 
 
+def save_training(fb_client, db_conn, day):
+    """
+    Download and save training activitites from Fitbit API
+    Stores sleep day overview and summary
+    :param fb_client: Fitbit Client
+    :param db_conn: DB connection
+    :param day: day to retrieve
+    :return:
+    """
+    day_str = str(day.strftime("%Y-%m-%d"))
+    day_after = day + datetime.timedelta(days=1)
+    day_after_str = str(day_after.strftime("%Y-%m-%d"))
+
+    training_stats = read_from_cache("training", day_str)
+    if not training_stats:
+        url = "https://api.fitbit.com/1/user/-/activities/list.json?beforeDate=" + \
+              day_after_str + "&sort=desc&offset=0&limit=10"
+        training_stats = fb_client.make_request(url)  # dict
+        save_to_cache("training", day_str, training_stats)
+
+    for act in training_stats['activities']:
+        start_time = act['startTime'][:26] + act['startTime'][27:]  # Remove : from timezone
+        if start_time[:10] == day_str:
+            train_df = pd.DataFrame({
+                'Date': day_str,
+                'ID': get_dict_element(act, 'logId'),
+                'Start': start_time,
+                'Type': get_dict_element(act, 'activityName'),
+                'Duration': get_dict_element(act, 'duration'),
+                'Steps': get_dict_element(act, 'steps'),
+                'AverageHeartRate': get_dict_element(act, 'averageHeartRate'),
+                'Calories': get_dict_element(act, 'calories'),
+                'ElevationGain': get_dict_element(act, 'elevationGain'),
+                'HeartRateZone0': get_dict_element(act, 'heartRateZones', 0, 'minutes'),
+                'HeartRateZone1': get_dict_element(act, 'heartRateZones', 1, 'minutes'),
+                'HeartRateZone2': get_dict_element(act, 'heartRateZones', 2, 'minutes'),
+                'HeartRateZone3': get_dict_element(act, 'heartRateZones', 3, 'minutes'),
+                'ActiveDuration': get_dict_element(act, 'activeDuration'),
+                'ActivityLevel0': get_dict_element(act, 'activityLevel', 0, 'minutes'),
+                'ActivityLevel1': get_dict_element(act, 'activityLevel', 1, 'minutes'),
+                'ActivityLevel2': get_dict_element(act, 'activityLevel', 2, 'minutes'),
+                'ActivityLevel3': get_dict_element(act, 'activityLevel', 3, 'minutes'),
+            }, index=[0])
+            save_df(train_df, day_str, 'Training/training_', 'Training', db_conn, ['ID'])
+
+
 def save_sleep(fb_client, db_conn, day):
     """
     Download and save sleep from Fitbit API
@@ -680,6 +726,7 @@ def save_fitbit_data(fitbit_client, database_connection, day):
     save_sleep(fitbit_client, database_connection, day)
     save_activities(fitbit_client, database_connection, day)
     save_steps(fitbit_client, database_connection, day)
+    save_training(fitbit_client, database_connection, day)
     save_heart(fitbit_client, database_connection, day)
 
 
@@ -755,6 +802,7 @@ if __name__ == "__main__":
                 # Only retrieve if there is data for this date
                 # Prevents reading before the data Fitbit data is available
                 # If summary record ia available, do not read
+                # if True:
                 if day_to_retrieve >= first_date_of_data and not day_present(db_connection, day_to_retrieve):
                     print("Downloading day {} : {}".format(j, day_to_retrieve.strftime("%Y-%m-%d")))
                     save_fitbit_data(auth2_client, db_connection, day_to_retrieve)
@@ -787,3 +835,5 @@ if __name__ == "__main__":
             finally:
                 # Close database connection and commit changes
                 db_connection.commit()
+
+    db_connection.close()
